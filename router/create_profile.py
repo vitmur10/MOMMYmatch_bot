@@ -1,21 +1,19 @@
 # router/profile.py
 
 from aiogram import Router, F
+from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
-    KeyboardButton,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    CallbackQuery,
+    CallbackQuery,ReplyKeyboardRemove
 )
+import math
+from config import VALID_REGIONS, SessionLocal, STATUS_OPTIONS, INTEREST_OPTIONS
 from database import User
-from aiogram.fsm.context import FSMContext
-from keyboard.reply import location_type_kb, status_kb
-from keyboard.inline import build_interests_kb, confirm_kb
-from state import ProfileStates
-from config import VALID_REGIONS, SessionLocal, STATUS_OPTIONS
 from function import get_user_by_telegram_id
+from keyboard.reply import location_type_kb, status_kb, build_interests_kb, confirm_kb, build_regions_kb, PAGE_SIZE, edit_menu_kb
+from state import ProfileStates, EditProfileStates
+
 router_state = Router()
 
 
@@ -39,14 +37,10 @@ async def process_name(message: Message, state: FSMContext):
 async def process_nickname(message: Message, state: FSMContext):
     await state.update_data(nickname=message.text.strip())
 
-    regions_str = ", ".join(VALID_REGIONS)
     await message.answer(
         "Клас 🥰\n"
-        "Тепер давай визначимо твоє місце проживання.\n\n"
-        "Напиши, будь ласка, свою область.\n"
-        f"Наприклад: *Львівська*\n\n"
-        f"Список доступних областей:\n{regions_str}",
-        parse_mode="Markdown",
+        "Тепер обери свою область зі списку нижче:",
+        reply_markup=build_regions_kb(page=0),
     )
     await state.set_state(ProfileStates.region)
 
@@ -57,23 +51,57 @@ async def process_nickname(message: Message, state: FSMContext):
 
 @router_state.message(ProfileStates.region)
 async def process_region(message: Message, state: FSMContext):
-    region_input = message.text.strip()
+    text = message.text.strip()
+    data = await state.get_data()
+    page = data.get("regions_page", 0)
 
-    # Нормалізуємо регіон: порівнюємо по lower()
-    normalized_map = {r.lower(): r for r in VALID_REGIONS}
-    key = region_input.lower()
-
-    if key not in normalized_map:
+    # 🔹 Пагінація: назад
+    if text == "⬅️ Назад":
+        page = max(page - 1, 0)
+        await state.update_data(regions_page=page)
         await message.answer(
-            "Я не знайшла такої області 😔\n"
-            "Перевір написання і обери одну з доступних.\n"
-            "Напиши ще раз область:"
+            "Обери, будь ласка, область:",
+            reply_markup=build_regions_kb(page),
         )
         return
 
-    region = normalized_map[key]
+    # 🔹 Пагінація: вперед
+    if text == "Вперед ➡️":
+        max_page = math.ceil(len(VALID_REGIONS) / PAGE_SIZE) - 1
+        page = min(page + 1, max_page)
+        await state.update_data(regions_page=page)
+        await message.answer(
+            "Обери, будь ласка, область:",
+            reply_markup=build_regions_kb(page),
+        )
+        return
+
+    # 🔹 Скасувати
+    if text == "Скасувати":
+        await state.clear()
+        await message.answer(
+            "Добре, реєстрацію скасовано. "
+            "Якщо захочеш — почни знову через /start 🙂"
+        )
+        return
+
+    # 🔹 Вибір області з кнопок
+    if text not in VALID_REGIONS:
+        await message.answer(
+            "Я не знайшла такої області 😔\n"
+            "Будь ласка, обери область кнопкою зі списку.",
+        )
+        await message.answer(
+            "Обери область:",
+            reply_markup=build_regions_kb(page),
+        )
+        return
+
+    # ✅ Коректна область
+    region = text
     await state.update_data(region=region)
 
+    await message.answer(f"Область: {region}")
     await message.answer(
         "Ти живеш у місті чи селі?",
         reply_markup=location_type_kb(),
@@ -209,46 +237,60 @@ async def process_status(message: Message, state: FSMContext):
 # 9. Інтереси — вибір/зняття вибору (CallbackQuery)
 # ------------------------------
 
-@router_state.callback_query(ProfileStates.interests, F.data.startswith("interest:"))
-async def toggle_interest(callback: CallbackQuery, state: FSMContext):
-    interest = callback.data.split(":", 1)[1]
+@router_state.message(ProfileStates.interests)
+async def process_interests(message: Message, state: FSMContext):
+    text = message.text.strip()
 
+    # Якщо натиснув кнопку з "✅ ..."
+    if text.startswith("✅ "):
+        text = text[2:].strip()
+
+    # Дістаємо поточний вибір зі стейту
     data = await state.get_data()
     selected = set(data.get("interests", []))
 
-    if interest in selected:
-        selected.remove(interest)
-    else:
-        selected.add(interest)
+    # 🔹 Користувач натиснув "Готово"
+    if text == "Готово":
+        if not selected:
+            await message.answer("Будь ласка, обери хоча б один інтерес 🙂")
+            await message.answer(
+                "Оберіть, будь ласка, інтереси:",
+                reply_markup=build_interests_kb(list(selected)),
+            )
+            return
 
-    selected_list = list(selected)
-    await state.update_data(interests=selected_list)
+        # зберігаємо вибір і йдемо далі
+        await state.update_data(interests=list(selected))
+        await message.answer(
+            "Дякую! 🥰\n"
+            "Тепер напиши, будь ласка, короткий BIO: трохи про себе і що ти шукаєш."
+        )
+        await state.set_state(ProfileStates.bio)
+        return
 
-    # Оновлюємо клавіатуру з урахуванням вибору
-    await callback.message.edit_reply_markup(
-        reply_markup=build_interests_kb(selected_list)
-    )
-
-    await callback.answer()  # просто закриваємо "годинник"
-
-
-@router_state.callback_query(ProfileStates.interests, F.data == "interests_done")
-async def interests_done(callback: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    selected = data.get("interests", [])
-
-    if not selected:
-        await callback.answer(
-            "Будь ласка, обери хоча б один інтерес 🙂", show_alert=True
+    # 🔹 Натиснуто щось, що не є інтересом
+    if text not in INTEREST_OPTIONS:
+        await message.answer(
+            "Будь ласка, обирай інтереси з кнопок нижче або натисни 'Готово'."
+        )
+        await message.answer(
+            "Оберіть інтереси:",
+            reply_markup=build_interests_kb(list(selected)),
         )
         return
 
-    await callback.message.answer(
-        "Дякую! 🥰\n"
-        "Тепер напиши, будь ласка, короткий BIO: трохи про себе і що ти шукаєш."
+    # 🔹 Тогл інтересу
+    if text in selected:
+        selected.remove(text)
+    else:
+        selected.add(text)
+
+    await state.update_data(interests=list(selected))
+
+    await message.answer(
+        "Оновила список інтересів. Можеш обрати ще або натиснути 'Готово' ✅",
+        reply_markup=build_interests_kb(list(selected)),
     )
-    await state.set_state(ProfileStates.bio)
-    await callback.answer()
 
 
 # ------------------------------
@@ -297,10 +339,11 @@ async def process_bio(message: Message, state: FSMContext):
 # 11. Підтвердження та збереження в БД
 # ------------------------------
 
-@router_state.callback_query(ProfileStates.confirm, F.data == "confirm_yes")
-async def confirm_yes(callback: CallbackQuery, state: FSMContext):
+@router_state.message(ProfileStates.confirm, F.text == "Все ок")
+async def confirm_yes(message: Message, state: FSMContext):
     data = await state.get_data()
-    telegram_id = callback.from_user.id
+    telegram_id = message.from_user.id
+    tg_username = message.from_user.username  # може бути None
 
     session = SessionLocal()
     try:
@@ -319,6 +362,9 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext):
         user.interests = data.get("interests", [])
         user.bio = data.get("bio")
 
+        # 👇 Сюди кладемо Telegram-username
+        user.username = tg_username
+
         session.add(user)
         session.commit()
 
@@ -327,19 +373,24 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext):
 
     await state.clear()
 
-    await callback.message.answer(
+    await message.answer(
         "Чудово! 🌸 Твоя анкета збережена.\n"
         "Тепер я зможу підбирати для тебе мам за спільними інтересами 🫶"
     )
-    await callback.answer()
-
-
-@router_state.callback_query(ProfileStates.confirm, F.data == "confirm_no")
-async def confirm_no(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.answer(
-        "Добре, давай спробуємо ще раз з початку 💫\n"
-        "Напиши, будь ласка, своє ім’я."
+    await message.answer(
+        "Можеш скористатися командами:\n"
+        "• /view — переглянути свій профіль\n"
+        "• /edit — змінити дані анкети\n"
+        "• /match — почати пошук мам"
+        ,reply_markup=ReplyKeyboardRemove()
     )
-    await state.set_state(ProfileStates.name)
-    await callback.answer()
+
+
+@router_state.message(ProfileStates.confirm, F.text == "Змінити")
+async def confirm_no(message: Message, state: FSMContext):
+    await message.answer(
+        "Добре, давай щось підредагуємо ✏️\n"
+        "Обери, що хочеш змінити:",
+        reply_markup=edit_menu_kb(),
+    )
+    await state.set_state(EditProfileStates.menu)

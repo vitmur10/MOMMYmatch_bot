@@ -2,3 +2,11 @@
 mommatch_dev.db
 venv/
 __pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+logs/
+*.log
+*.xls
+*.xlsx

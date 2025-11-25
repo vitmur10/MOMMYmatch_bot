@@ -1,5 +1,6 @@
 from sqlalchemy import (
-    create_engine, Column, Integer, BigInteger, String, Text, JSON, TIMESTAMP, ForeignKey, CheckConstraint, UniqueConstraint
+    create_engine, Column, Integer, BigInteger, String, Text, JSON, TIMESTAMP, ForeignKey, CheckConstraint,
+    UniqueConstraint
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
@@ -19,6 +20,7 @@ DATABASE_URL = f"sqlite:///{DB_FILE}"
 engine = create_engine(DATABASE_URL, echo=True, connect_args={"check_same_thread": False})
 Base = declarative_base()
 
+
 # ==========================
 # Таблиця користувачів
 # ==========================
@@ -27,9 +29,8 @@ class User(Base):
 
     telegram_id = Column(BigInteger, primary_key=True)
     name = Column(String(255))
-    
-    username = Column(String(255))      # може бути загальний username
-    tg_username = Column(String(255))   # суто Telegram username
+
+    username = Column(String(255))  # може бути загальний username
 
     nickname = Column(String(255))
     region = Column(String(100))
@@ -42,6 +43,7 @@ class User(Base):
 
     choices_made = relationship("Choice", back_populates="chooser", foreign_keys="Choice.chooser_id")
     choices_received = relationship("Choice", back_populates="chosen", foreign_keys="Choice.chosen_id")
+
 
 # ==========================
 # Таблиця виборів
@@ -61,6 +63,7 @@ class Choice(Base):
     chooser = relationship("User", foreign_keys=[chooser_id], back_populates="choices_made")
     chosen = relationship("User", foreign_keys=[chosen_id], back_populates="choices_received")
 
+
 # ==========================
 # Таблиця текстів бота
 # ==========================
@@ -72,6 +75,7 @@ class BotMessage(Base):
     text = Column(Text, nullable=False)
     lang = Column(String(10), default="uk")
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
+
 
 # ==========================
 # Створення всіх таблиць

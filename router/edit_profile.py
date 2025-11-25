@@ -1,17 +1,16 @@
 from aiogram import Router, F
-from aiogram.types import Message   
+from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from config import SessionLocal 
+from config import SessionLocal
 from function import get_user_by_telegram_id, send_edit_menu
-from keyboard.inline import build_edit_interests_kb
-from keyboard.reply import status_kb, location_type_kb
+from keyboard.reply import status_kb, location_type_kb, build_edit_interests_kb
 from state import EditProfileStates
 from aiogram.types import ReplyKeyboardMarkup
 from config import VALID_REGIONS, STATUS_OPTIONS
 from aiogram.types import CallbackQuery
 
-
 edit_router = Router()
+
 
 @edit_router.message(EditProfileStates.menu, F.text == "Ім'я")
 async def edit_name_start(message: Message, state: FSMContext):
@@ -84,6 +83,7 @@ async def edit_start_matching(message: Message, state: FSMContext):
 """
 Зберер логіки для обробки введених нових даних користувача
 (ім'я, нікнейм, вік, статус, BIO, місце проживання)"""
+
 
 @edit_router.message(EditProfileStates.name)
 async def edit_name_save(message: Message, state: FSMContext):
@@ -172,7 +172,6 @@ async def edit_location_type(message: Message, state: FSMContext):
             parse_mode="Markdown",
             reply_markup=location_type_kb(),
         )
-
 
 
 @edit_router.message(EditProfileStates.city)
@@ -269,7 +268,6 @@ async def edit_status_save(message: Message, state: FSMContext):
     await message.answer(f"Статус оновлено на: {status} ✅")
     await state.set_state(EditProfileStates.menu)
     await send_edit_menu(message)
-
 
 
 @edit_router.callback_query(EditProfileStates.interests, F.data.startswith("edit_interest:"))

@@ -1,5 +1,6 @@
 from aiogram.fsm.state import StatesGroup, State
 
+
 class ProfileStates(StatesGroup):
     # 1. Ім'я
     name = State()
@@ -8,10 +9,10 @@ class ProfileStates(StatesGroup):
     nickname = State()
 
     # 3. Місце проживання
-    region = State()          # область
-    location_type = State()   # місто / село (кнопки)
-    city = State()            # назва міста (якщо вибрали "місто")
-    village = State()         # назва села (якщо вибрали "село")
+    region = State()  # область
+    location_type = State()  # місто / село (кнопки)
+    city = State()  # назва міста (якщо вибрали "місто")
+    village = State()  # назва села (якщо вибрали "село")
 
     # 4. Вік
     age = State()
@@ -46,3 +47,8 @@ class EditProfileStates(StatesGroup):
     status = State()
     interests = State()
     bio = State()
+
+
+class MatchStates(StatesGroup):
+    criteria = State()
+    like_dislike = State()

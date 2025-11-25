@@ -5,10 +5,11 @@ from aiogram.types import Message
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from config import SessionLocal
-from state import ProfileStates, EditProfileStates
+from state import ProfileStates, EditProfileStates, MatchStates
 from function import send_edit_menu, get_status_emoji
-from keyboard.inline import view_after_kb
+from keyboard.reply import build_match_criteria_kb
 router_comand = Router()
+
 
 @router_comand.message(CommandStart())
 async def process_start_command(message: Message, state: FSMContext):
@@ -73,7 +74,6 @@ async def cmd_edit(message: Message, state: FSMContext):
     await send_edit_menu(message)
 
 
-
 @router_comand.message(Command("view"))
 async def cmd_view(message: Message, state: FSMContext):
     session = SessionLocal()
@@ -134,6 +134,32 @@ async def cmd_view(message: Message, state: FSMContext):
 
     # Пропозиція оновити / почати метчінг
     await message.answer(
-        "Хочеш щось змінити чи почати метчінг?",
-        reply_markup=view_after_kb(),
+        "Хочеш щось змінити чи почати метчінг?\n"
+        "✏️ /edit — змінити дані анкети\n"
+        "🤝 /match — почати пошук мам (метчінг)\n"
     )
+
+
+@router_comand.message(Command("match"))
+async def cmd_match(message: Message, state: FSMContext):
+    me_id = message.from_user.id
+
+    session = SessionLocal()
+    try:
+        me = get_user_by_telegram_id(session, me_id)
+    finally:
+        session.close()
+
+    if me is None:
+        await message.answer(
+            "Тебе ще немає в базі 🧐\n"
+            "Спочатку заповни анкету через /start."
+        )
+        return
+
+    await message.answer(
+        "Окей, давай підберемо тобі мам 🤝\n"
+        "За яким критерієм хочеш шукати?",
+        reply_markup=build_match_criteria_kb(),
+    )
+    await state.set_state(MatchStates.criteria)
