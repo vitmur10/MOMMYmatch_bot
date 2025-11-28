@@ -5,13 +5,9 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Update
 
 from config import TOKEN
-from router import all_routers  # як у тебе було
+from router import all_routers
 
-# 🔹 URL вебхука беремо з env, щоб потім легко міняти в Cloud Run
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # наприклад: https://your-domain/webhook
-
-if not WEBHOOK_URL:
-    raise RuntimeError("WEBHOOK_URL не заданий у змінних середовища")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -22,10 +18,19 @@ for router in all_routers:
 app = FastAPI()
 
 
+@app.get("/")
+async def healthcheck():
+    return {"status": "ok"}
+
+
 @app.on_event("startup")
 async def on_startup():
-    # реєструємо вебхук
-    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+    if WEBHOOK_URL:
+        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+        print(f"✅ Webhook set to: {WEBHOOK_URL}")
+    else:
+        # щоб контейнер не падав, якщо забули змінну
+        print("⚠ WEBHOOK_URL не заданий — вебхук не буде встановлений")
 
 
 @app.on_event("shutdown")
@@ -35,7 +40,6 @@ async def on_shutdown():
 
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
-    """Ендпоінт, куди Telegram шле оновлення."""
     data = await request.json()
     update = Update.model_validate(data)
     await dp.feed_update(bot, update)
