@@ -1,15 +1,20 @@
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from config import SessionLocal
+from database import SessionLocal
 from function import get_user_by_telegram_id, send_edit_menu
-from keyboard.reply import status_kb, location_type_kb, build_edit_interests_kb
+from keyboard.reply import status_kb, location_type_kb, build_edit_interests_kb, build_regions_kb, PAGE_SIZE, \
+    edit_menu_kb
 from state import EditProfileStates
-from aiogram.types import ReplyKeyboardMarkup
+from aiogram.types import ReplyKeyboardMarkup, ReplyKeyboardRemove
 from config import VALID_REGIONS, STATUS_OPTIONS
 from aiogram.types import CallbackQuery
-
+import math
+import re
 edit_router = Router()
+
+
+
 
 
 @edit_router.message(EditProfileStates.menu, F.text == "Ім'я")
@@ -27,8 +32,8 @@ async def edit_nickname_start(message: Message, state: FSMContext):
 @edit_router.message(EditProfileStates.menu, F.text == "Місце проживання")
 async def edit_location_start(message: Message, state: FSMContext):
     await message.answer(
-        "Окей, оновимо місце проживання 🌍\n"
-        "Напиши область (наприклад: Львівська)."
+        "Тепер обери свою область зі списку нижче:",
+        reply_markup=build_regions_kb(page=0),
     )
     await state.set_state(EditProfileStates.region)
 
@@ -71,13 +76,26 @@ async def edit_bio_start(message: Message, state: FSMContext):
     await state.set_state(EditProfileStates.bio)
 
 
-@edit_router.message(EditProfileStates.menu, F.text == "Почати метчінг")
-async def edit_start_matching(message: Message, state: FSMContext):
-    # Тут пізніше вставимо логіку пошуку
+@edit_router.message(EditProfileStates.menu)
+async def edit_menu_fallback(message: Message, state: FSMContext):
+    text = (message.text or "").strip()
+
+    # Якщо прийшла якась команда типу /view, /match, /help і т.д.
+    if text.startswith("/"):
+        await state.clear()
+        await message.answer(
+            "Вийшла з режиму редагування ✅\n"
+            "Можеш користуватися командами далі 🙂",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        # команду юзер надішле ще раз вже поза станом
+        return
+
+    # Будь-який інший текст — просимо обрати з меню
     await message.answer(
-        "Тут буде запуск метчінгу 🌸\nПоки що це заглушка."
+        "Будь ласка, обери, що хочеш змінити, з кнопок нижче ✏️",
+        reply_markup=edit_menu_kb(),
     )
-    # Залишаємося в меню або можемо очищати стани – на твій розсуд
 
 
 """
@@ -89,6 +107,27 @@ async def edit_start_matching(message: Message, state: FSMContext):
 async def edit_name_save(message: Message, state: FSMContext):
     new_name = message.text.strip()
 
+    # ❌ Забороняємо пустий текст
+    if not new_name:
+        await message.answer("Будь ласка, введи ім’я 🙂")
+        return
+
+    # ❌ Має містити хоча б одну літеру
+    if not re.search(r"[A-Za-zА-Яа-яЇїЄєІіҐґ]", new_name):
+        await message.answer("Ім’я повинно містити хоча б одну букву 🙂")
+        return
+
+    # ❌ Забороняємо тільки числа
+    if new_name.isdigit():
+        await message.answer("Ім’я не може складатися лише з цифр 🙂")
+        return
+
+    # ❌ Мінімальна довжина
+    if len(new_name) < 2:
+        await message.answer("Ім’я має містити хоча б 2 літери 🙂")
+        return
+
+    # ✅ Зберігаємо
     session = SessionLocal()
     try:
         user = get_user_by_telegram_id(session, message.from_user.id)
@@ -123,20 +162,53 @@ async def edit_nickname_save(message: Message, state: FSMContext):
 
 @edit_router.message(EditProfileStates.region)
 async def edit_region(message: Message, state: FSMContext):
-    region_input = message.text.strip()
+    text = message.text.strip()
+    data = await state.get_data()
+    page = data.get("regions_page", 0)
 
-    normalized_map = {r.lower(): r for r in VALID_REGIONS}
-    key = region_input.lower()
-
-    if key not in normalized_map:
+    # 🔹 Пагінація: назад
+    if text == "⬅️ Назад":
+        page = max(page - 1, 0)
+        await state.update_data(regions_page=page)
         await message.answer(
-            "Я не знайшла такої області 😔\n"
-            "Перевір написання і обери одну з доступних.\n"
-            "Напиши ще раз область:"
+            "Обери, будь ласка, область:",
+            reply_markup=build_regions_kb(page),
         )
         return
 
-    region = normalized_map[key]
+    # 🔹 Пагінація: вперед
+    if text == "Вперед ➡️":
+        max_page = math.ceil(len(VALID_REGIONS) / PAGE_SIZE) - 1
+        page = min(page + 1, max_page)
+        await state.update_data(regions_page=page)
+        await message.answer(
+            "Обери, будь ласка, область:",
+            reply_markup=build_regions_kb(page),
+        )
+        return
+
+    # 🔹 Скасувати
+    if text == "Скасувати":
+        await state.clear()
+        await message.answer(
+            "Добре, реєстрацію скасовано. "
+            "Якщо захочеш — почни знову через /start 🙂"
+        )
+        return
+
+    # 🔹 Вибір області з кнопок
+    if text not in VALID_REGIONS:
+        await message.answer(
+            "Я не знайшла такої області 😔\n"
+            "Будь ласка, обери область кнопкою зі списку.",
+        )
+        await message.answer(
+            "Обери область:",
+            reply_markup=build_regions_kb(page),
+        )
+        return
+
+    region = text
     await state.update_data(region=region)
 
     await message.answer(

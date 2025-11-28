@@ -1,15 +1,16 @@
+import math
+
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardRemove
 from sqlalchemy.exc import IntegrityError
 
-from config import SessionLocal
 from config import VALID_REGIONS
-from database import User, Choice
-from function import find_candidates_by_criterion, get_user_by_telegram_id, notify_match, run_match_flow
-from keyboard.reply import edit_menu_kb, location_type_kb, PAGE_SIZE, build_regions_kb, build_match_kb
+from database import User, Choice, SessionLocal
+from function import notify_match, run_match_flow
+from keyboard.reply import location_type_kb, PAGE_SIZE, build_regions_kb
 from state import ProfileStates, MatchStates
-import math
+
 # send_edit_menu вже є у нас з /edit
 router_hengler = Router()
 
@@ -34,6 +35,8 @@ async def match_by_interests(message: Message, state: FSMContext):
 async def match_like_message(message: Message, state: FSMContext):
     data = await state.get_data()
     candidate_id = data.get("current_candidate_id")
+    criterion = data.get("current_criterion")
+
     if not candidate_id:
         await message.answer("Сталася помилка з кандидатом 😔")
         await state.clear()
@@ -43,7 +46,6 @@ async def match_like_message(message: Message, state: FSMContext):
 
     session = SessionLocal()
     try:
-        # 1. чи вже є запис
         existing = (
             session.query(Choice)
             .filter(
@@ -62,7 +64,6 @@ async def match_like_message(message: Message, state: FSMContext):
             session.add(choice)
             session.commit()
 
-        # 2. перевіряємо взаємний лайк
         mutual = (
             session.query(Choice)
             .filter(
@@ -91,13 +92,20 @@ async def match_like_message(message: Message, state: FSMContext):
     finally:
         session.close()
 
-    await state.clear()
+    # 🔁 автоматично наступний кандидат за тим самим критерієм
+    if criterion:
+        await run_match_flow(message, state, criterion=criterion)
+    else:
+        await state.clear()
+        await message.answer("Щоб продовжити пошук, виконай /match ще раз 🙂")
 
 
 @router_hengler.message(MatchStates.like_dislike, F.text == "👎 Дизлайк")
 async def match_dislike_message(message: Message, state: FSMContext):
     data = await state.get_data()
     candidate_id = data.get("current_candidate_id")
+    criterion = data.get("current_criterion")
+
     if not candidate_id:
         await message.answer("Сталася помилка з кандидатом 😔")
         await state.clear()
@@ -131,7 +139,23 @@ async def match_dislike_message(message: Message, state: FSMContext):
         session.close()
 
     await message.answer("Дизлайк збережено 💔")
+
+    # 🔁 автоматично наступний кандидат за тим самим критерієм
+    if criterion:
+        await run_match_flow(message, state, criterion=criterion)
+    else:
+        await state.clear()
+        await message.answer("Щоб продовжити пошук, виконай /match ще раз 🙂")
+
+
+@router_hengler.message(MatchStates.like_dislike, F.text == "⛔ Зупинити пошук")
+async def match_stop_message(message: Message, state: FSMContext):
     await state.clear()
+    await message.answer(
+        "Зупиняю пошук мам 🤚\n"
+        "Якщо захочеш продовжити — просто надішли /match 💕",
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
 
 @router_hengler.message(ProfileStates.region)

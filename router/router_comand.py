@@ -4,7 +4,7 @@ from function import get_user_by_telegram_id
 from aiogram.types import Message
 from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
-from config import SessionLocal
+from database import SessionLocal
 from state import ProfileStates, EditProfileStates, MatchStates
 from function import send_edit_menu, get_status_emoji
 from keyboard.reply import build_match_criteria_kb

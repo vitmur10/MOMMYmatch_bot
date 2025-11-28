@@ -1,25 +1,48 @@
-# router/profile.py
-
+import math
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     Message,
     ReplyKeyboardMarkup,
-    CallbackQuery,ReplyKeyboardRemove
+    ReplyKeyboardRemove
 )
-import math
-from config import VALID_REGIONS, SessionLocal, STATUS_OPTIONS, INTEREST_OPTIONS
-from database import User
-from function import get_user_by_telegram_id
-from keyboard.reply import location_type_kb, status_kb, build_interests_kb, confirm_kb, build_regions_kb, PAGE_SIZE, edit_menu_kb
+from config import VALID_REGIONS, STATUS_OPTIONS, INTEREST_OPTIONS
+from database import SessionLocal
+from function import save_user_profile_from_state
+from keyboard.reply import location_type_kb, status_kb, build_interests_kb, confirm_kb, build_regions_kb, PAGE_SIZE, \
+    edit_menu_kb
 from state import ProfileStates, EditProfileStates
+import re
 
 router_state = Router()
 
 
 @router_state.message(ProfileStates.name)
 async def process_name(message: Message, state: FSMContext):
-    await state.update_data(name=message.text.strip())
+    name = message.text.strip()
+
+    # ❌ Забороняємо порожній текст
+    if not name:
+        await message.answer("Будь ласка, введи ім’я 🙂")
+        return
+
+    # ❌ Забороняємо якщо в імені НІ ОДНІЄЇ букви
+    if not re.search(r"[A-Za-zА-Яа-яЇїЄєІіҐґ]", name):
+        await message.answer("Ім’я повинно містити хоча б одну букву 🙂")
+        return
+
+    # ❌ Забороняємо якщо це лише цифри
+    if name.isdigit():
+        await message.answer("Ім’я не може складатися лише з цифр 🙂")
+        return
+
+    # ❌ Мінімальна довжина (імітація реального імені)
+    if len(name) < 2:
+        await message.answer("Ім’я має містити хоча б 2 літери 🙂")
+        return
+
+    # ✅ Усе добре — зберігаємо
+    await state.update_data(name=name)
 
     await message.answer(
         "Супер! 🌼\n"
@@ -347,27 +370,7 @@ async def confirm_yes(message: Message, state: FSMContext):
 
     session = SessionLocal()
     try:
-        user = get_user_by_telegram_id(session, telegram_id)
-
-        if user is None:
-            user = User(telegram_id=telegram_id)
-
-        user.name = data.get("name")
-        user.nickname = data.get("nickname")
-        user.region = data.get("region")
-        user.city = data.get("city")
-        user.village = data.get("village")
-        user.age = data.get("age")
-        user.status = data.get("status")
-        user.interests = data.get("interests", [])
-        user.bio = data.get("bio")
-
-        # 👇 Сюди кладемо Telegram-username
-        user.username = tg_username
-
-        session.add(user)
-        session.commit()
-
+        save_user_profile_from_state(session, telegram_id, tg_username, data)
     finally:
         session.close()
 
@@ -381,16 +384,28 @@ async def confirm_yes(message: Message, state: FSMContext):
         "Можеш скористатися командами:\n"
         "• /view — переглянути свій профіль\n"
         "• /edit — змінити дані анкети\n"
-        "• /match — почати пошук мам"
-        ,reply_markup=ReplyKeyboardRemove()
+        "• /match — почати пошук мам",
+        reply_markup=ReplyKeyboardRemove()
     )
 
 
 @router_state.message(ProfileStates.confirm, F.text == "Змінити")
 async def confirm_no(message: Message, state: FSMContext):
+    data = await state.get_data()
+    telegram_id = message.from_user.id
+    tg_username = message.from_user.username
+
+    # 1️⃣ Все одно зберігаємо поточний профіль
+    session = SessionLocal()
+    try:
+        save_user_profile_from_state(session, telegram_id, tg_username, data)
+    finally:
+        session.close()
+
+    # 2️⃣ Даємо меню редагування
     await message.answer(
-        "Добре, давай щось підредагуємо ✏️\n"
-        "Обери, що хочеш змінити:",
+        "Анкету збережено ✅\n"
+        "Тепер обери, що хочеш змінити ✏️",
         reply_markup=edit_menu_kb(),
     )
     await state.set_state(EditProfileStates.menu)

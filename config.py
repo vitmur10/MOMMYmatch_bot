@@ -1,14 +1,12 @@
 import os
 from dotenv import load_dotenv
-from sqlalchemy.orm import sessionmaker
-from database import engine
 
-SessionLocal = sessionmaker(bind=engine)
+
 
 load_dotenv()
 
 TOKEN = os.getenv("TOKEN_BOT")
-
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 VALID_REGIONS = [
     "Вінницька", "Волинська", "Дніпропетровська", "Донецька", "Житомирська",

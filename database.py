@@ -2,22 +2,23 @@ from sqlalchemy import (
     create_engine, Column, Integer, BigInteger, String, Text, JSON, TIMESTAMP, ForeignKey, CheckConstraint,
     UniqueConstraint
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
 from datetime import datetime
-import os
-
+from config import DATABASE_URL
 # ==========================
-# SQLite для розробки
+# PostgreSQL через env
 # ==========================
-DB_FILE = "mommatch_dev.db"
-DATABASE_URL = f"sqlite:///{DB_FILE}"
 
-# ❌ БІЛЬШЕ НЕ ВИДАЛЯЄМО БД ПРИ ІМПОРТІ
-# if os.path.exists(DB_FILE):
-#     os.remove(DB_FILE)
-
-engine = create_engine(DATABASE_URL, echo=True, connect_args={"check_same_thread": False})
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL не заданий! Додай його в .env або env vars.")
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10
+)
+SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
 
 
@@ -82,7 +83,7 @@ class BotMessage(Base):
 # ==========================
 def create_tables():
     Base.metadata.create_all(engine)
-    print("Таблиці створено у SQLite!")
+    print("Таблиці створено у PostgreSQL!")
 
 
 if __name__ == "__main__":

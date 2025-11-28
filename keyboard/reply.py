@@ -75,7 +75,6 @@ def build_edit_interests_kb(selected: list[str]) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=rows,
         resize_keyboard=True,
-        one_time_keyboard=True
     )
 
 
@@ -83,7 +82,13 @@ def build_edit_interests_kb(selected: list[str]) -> ReplyKeyboardMarkup:
 def build_match_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="👍 Лайк"), KeyboardButton(text="👎 Дизлайк")],
+            [
+                KeyboardButton(text="👍 Лайк"),
+                KeyboardButton(text="👎 Дизлайк"),
+            ],
+            [
+                KeyboardButton(text="⛔ Зупинити пошук"),
+            ],
         ],
         resize_keyboard=True,
         one_time_keyboard=True,
