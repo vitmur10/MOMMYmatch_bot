@@ -502,46 +502,56 @@ async def process_interests(message: Message, state: FSMContext):
 @router_state.message(ProfileStates.bio)
 async def process_bio(message: Message, state: FSMContext):
     """
-    Зберігаємо BIO, формуємо коротке резюме анкети й просимо підтвердити.
+    Зберігаємо BIO, формуємо резюме анкети й просимо підтвердити.
     """
     await state.update_data(bio=(message.text or "").strip())
     data = await state.get_data()
 
-    # Формуємо текст резюме у вигляді звичайного plain-text
-    lines = [
-        f"👩 Ім'я: {data.get('name')}",
-        f"✨ Нікнейм: {data.get('nickname')}",
-        f"📍 Область: {data.get('region')}",
-    ]
+    # акуратно дістаємо всі поля з fallback'ами
+    name = data.get("name") or "не вказано"
+    nickname = data.get("nickname") or "не вказано"
+    region = data.get("region") or "не вказано"
+    age = data.get("age") or "не вказано"
+    status = data.get("status") or "не вказано"
+    bio = data.get("bio") or "не вказано"
 
+    # лінія з містом / селом
     location_type = data.get("location_type")
-    if location_type == "city":
-        lines.append(f"🏙 Місто: {data.get('city')}")
-    elif location_type == "village":
-        lines.append(f"🌿 Село: {data.get('village')}")
+    if location_type == "city" and data.get("city"):
+        location_line = f"🏙 Місто: {data.get('city')}"
+    elif location_type == "village" and data.get("village"):
+        location_line = f"🌿 Село: {data.get('village')}"
+    else:
+        location_line = "📌 Місто / село: не вказано"
 
-    lines.extend(
-        [
-            f"🎂 Вік: {data.get('age')}",
-            f"👶 Статус: {data.get('status')}",
-            "🧩 Інтереси: " + ", ".join(data.get("interests", [])),
-            f"📜 BIO: {data.get('bio')}",
-        ]
-    )
+    # інтереси
+    interests_list = data.get("interests") or []
+    interests = ", ".join(interests_list) if interests_list else "не вказано"
 
-    summary = "\n".join(lines)
-
-    # Текст беремо з BotMessage, де {summary} — готовий блок з усіма полями
-    # Приклад шаблону:
-    # key="profile_summary"
-    # text="Ось як виглядає твоя анкета:\n\n{summary}\n\nВсе правильно?"
     session = SessionLocal()
     try:
+        # приклад шаблону в БД:
+        # "Ось як виглядає твоя анкета:\n\n"
+        # "👩 Ім'я: {name}\n"
+        # "✨ Нікнейм: {nickname}\n"
+        # "📍 Область: {region}\n"
+        # "{location_line}\n"
+        # "🎂 Вік: {age}\n"
+        # "👶 Статус: {status}\n"
+        # "🧩 Інтереси: {interests}\n"
+        # "📜 BIO: {bio}"
         text = render_bot_message(
             session,
             "profile_summary",
             lang="uk",
-            summary=summary,
+            name=name,
+            nickname=nickname,
+            region=region,
+            location_line=location_line,
+            age=age,
+            status=status,
+            interests=interests,
+            bio=bio,
         )
     finally:
         session.close()
