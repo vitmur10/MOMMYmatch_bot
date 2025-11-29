@@ -123,7 +123,7 @@ async def cmd_view(message: Message, state: FSMContext):
     - якщо профілю немає → показуємо повідомлення (BotMessage.key = "view_user_not_found").
     - якщо є → будуємо картку профілю та показуємо її (BotMessage.key = "view_profile_card"),
       а також окремим повідомленням підказуємо про /edit та /match
-      (BotMessage.key = "view_suggest_edit_match").
+      (BotMessage.key = "view_suggest_edit_match") з невеликою затримкою.
     """
     session = SessionLocal()
     try:
@@ -131,7 +131,6 @@ async def cmd_view(message: Message, state: FSMContext):
 
         if user is None:
             # Повідомлення, якщо профіль ще не створений
-            # key="view_user_not_found"
             text = render_bot_message(session, "view_user_not_found", lang="uk")
             await message.answer(text, parse_mode="HTML")
             return
@@ -140,18 +139,24 @@ async def cmd_view(message: Message, state: FSMContext):
         name = user.name or "не вказано"
         nickname = user.nickname or "не вказано"
         region = user.region or "не вказано"
-
-        if user.city:
-            place = f"🏙 {user.city}"
-        elif user.village:
-            place = f"🌿 {user.village}"
-        else:
-            place = "не вказано"
-
         age = str(user.age) if user.age is not None else "не вказано"
         status = user.status or "не вказано"
+        bio = user.bio or "не вказано"
 
-        # Інтереси в кілька рядків
+        # Локація в одному рядку
+        city = user.city
+        village = user.village
+
+        if city and village:
+            location = f"🏙️ Місто: {city} / 🏘️ Село: {village}"
+        elif city:
+            location = f"🏙️ Місто: {city}"
+        elif village:
+            location = f"🏘️ Село: {village}"
+        else:
+            location = "📌 Місце проживання: не вказано"
+
+        # Інтереси блоком (як було раніше — під шаблон {interests_block})
         if user.interests:
             interests_lines = "\n".join(
                 f"   • {html.escape(i)}" for i in user.interests
@@ -160,31 +165,29 @@ async def cmd_view(message: Message, state: FSMContext):
         else:
             interests_block = " не вказано"
 
-        bio = user.bio or "не вказано"
-
         status_emoji = get_status_emoji(user.status)
 
         # Екрануємо текстові поля, щоб не зламати HTML
         name_safe = html.escape(name)
         nickname_safe = html.escape(nickname)
         region_safe = html.escape(region)
-        place_safe = html.escape(place)
+        location_safe = html.escape(location)
         status_safe = html.escape(status)
         bio_safe = html.escape(bio)
 
         # -------- Картка профілю з BotMessage --------
         # Приклад шаблону для key="view_profile_card":
         #
-        # "<b>{status_emoji} Твій профіль</b>\n"
+        # "{status_emoji} <b>Твій профіль</b>\n"
         # "━━━━━━━━━━━━━━━━━━━━\n"
-        # "👩 <b>Ім'я:</b> {name}\n"
-        # "✨ <b>Нікнейм:</b> {nickname}\n"
-        # "📍 <b>Область:</b> {region}\n"
-        # "📌 <b>Місто / село:</b> {place}\n"
-        # "🎂 <b>Вік:</b> {age}\n"
-        # "👶 <b>Статус:</b> {status}\n"
-        # "🧩 <b>Інтереси:</b>{interests_block}\n"
-        # "📜 <b>BIO:</b>\n{bio}\n"
+        # "👩 Ім'я: {name}\n"
+        # "✨ Нікнейм: {nickname}\n"
+        # "📍 Область: {region}\n"
+        # "{location}\n"
+        # "🎂 Вік: {age}\n"
+        # "👶 Статус: {status}\n"
+        # "🧩 Інтереси:{interests_block}\n"
+        # "📜 BIO:\n{bio}\n"
         # "━━━━━━━━━━━━━━━━━━━━"
         text_profile = render_bot_message(
             session,
@@ -194,7 +197,7 @@ async def cmd_view(message: Message, state: FSMContext):
             name=name_safe,
             nickname=nickname_safe,
             region=region_safe,
-            place=place_safe,
+            location=location_safe,         # 🔹 передаємо location
             age=age,
             status=status_safe,
             interests_block=interests_block,
@@ -202,11 +205,6 @@ async def cmd_view(message: Message, state: FSMContext):
         )
 
         # Друге повідомлення з пропозицією /edit та /match
-        # key="view_suggest_edit_match"
-        # Наприклад:
-        # "Хочеш щось змінити чи почати метчінг?\n"
-        # "✏️ /edit — змінити дані анкети\n"
-        # "🤝 /match — почати пошук мам (метчінг)\n"
         text_followup = render_bot_message(
             session,
             "view_suggest_edit_match",
@@ -218,6 +216,9 @@ async def cmd_view(message: Message, state: FSMContext):
 
     # Надсилаємо картку профілю
     await message.answer(text_profile, parse_mode="HTML")
+
+    # Невелика затримка перед підказкою
+    await asyncio.sleep(3)
 
     # Надсилаємо фоллоу-ап із підказками
     await message.answer(text_followup, parse_mode="HTML")
