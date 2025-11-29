@@ -148,11 +148,11 @@ async def cmd_view(message: Message, state: FSMContext):
         village = user.village
 
         if city and village:
-            location = f"🏙️ Місто: {city} / 🏘️ Село: {village}"
+            location = f"🏙{city} {village}"
         elif city:
-            location = f"🏙️ Місто: {city}"
+            location = f"{city}"
         elif village:
-            location = f"🏘️ Село: {village}"
+            location = f"{village}"
         else:
             location = "📌 Місце проживання: не вказано"
 
