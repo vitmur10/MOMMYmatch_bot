@@ -1,18 +1,35 @@
 from aiogram import Router
-from aiogram.filters import CommandStart
-from function import get_user_by_telegram_id
-from aiogram.types import Message
 from aiogram.filters import CommandStart, Command
+from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
+
 from database import SessionLocal
 from state import ProfileStates, EditProfileStates, MatchStates
-from function import send_edit_menu, get_status_emoji
+from function import (
+    get_user_by_telegram_id,
+    send_edit_menu,
+    get_status_emoji,
+    render_bot_message,
+)
 from keyboard.reply import build_match_criteria_kb
+import html
+
 router_comand = Router()
 
 
+# ====================== /start ======================
+
 @router_comand.message(CommandStart())
 async def process_start_command(message: Message, state: FSMContext):
+    """
+    Обробка команди /start.
+
+    Логіка:
+    - якщо користувача ще немає в БД → переводимо в стан заповнення анкети (ім'я)
+      і показуємо вітальний текст для новачка (BotMessage.key = "start_new_user").
+    - якщо користувач вже є → показуємо вітальний текст з командами
+      (BotMessage.key = "start_existing_user").
+    """
     session = SessionLocal()
     try:
         user = get_user_by_telegram_id(session, message.from_user.id)
@@ -20,146 +37,228 @@ async def process_start_command(message: Message, state: FSMContext):
         if user is None:
             # ❌ Немає в БД → запускаємо анкету
             await state.set_state(ProfileStates.name)
-            await message.answer(
-                "Привіт! 👋\n"
-                "Давай заповнимо анкету, щоб я могла підбирати тобі мам 🫶\n\n"
-                "Спочатку — як тебе звати? Напиши, будь ласка, своє ім’я."
-            )
+
+            # Приклад шаблону в BotMessage:
+            # key="start_new_user", lang="uk"
+            # text="Привіт! 👋\nДавай заповнимо анкету, щоб я могла підбирати тобі мам 🫶\n\n"
+            #      "Спочатку — як тебе звати? Напиши, будь ласка, своє ім’я."
+            text = render_bot_message(session, "start_new_user", lang="uk")
+
+            await message.answer(text, parse_mode="HTML")
         else:
-            # ✅ Є в БД → просто вітаємо
-            await message.answer(
-                "Ти вже зареєстрована в системі 🌸\n\n"
-                "Можеш скористатися командами:\n"
-                "• /view — переглянути свій профіль\n"
-                "• /edit — змінити дані анкети\n"
-                "• /match — почати пошук мам (коли реалізуємо метчінг)\n"
-            )
+            # ✅ Є в БД → просто вітаємо і показуємо доступні команди
+            # Приклад шаблону:
+            # key="start_existing_user"
+            # text="Ти вже зареєстрована в системі 🌸\n\n..."
+            text = render_bot_message(session, "start_existing_user", lang="uk")
+
+            await message.answer(text, parse_mode="HTML")
     finally:
         session.close()
 
+
+# ====================== /help ======================
 
 @router_comand.message(Command("help"))
 async def cmd_help(message: Message):
-    text = (
-        "📘 *Допомога — доступні команди*\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "👋 /start — почати роботу з ботом\n"
-        "📇 /view — переглянути свій профіль\n"
-        "✏️ /edit — змінити дані анкети\n"
-        "🤝 /match — почати пошук мам (метчінг)\n"
-        "ℹ️ /help — переглянути список команд\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "Якщо ти ще не зареєстрована — бот автоматично запропонує заповнити анкету ❤️"
-    )
+    """
+    Обробка команди /help.
 
-    await message.answer(text, parse_mode="Markdown")
-
-
-@router_comand.message(Command("edit"))
-async def cmd_edit(message: Message, state: FSMContext):
+    Витягуємо з БД текст з описом доступних команд (BotMessage.key = "help_text").
+    """
     session = SessionLocal()
     try:
-        user = get_user_by_telegram_id(session, message.from_user.id)
+        # Приклад шаблону:
+        # key="help_text"
+        # text="📘 <b>Допомога — доступні команди</b>\n━━━━━━━━━━━━..."
+        text = render_bot_message(session, "help_text", lang="uk")
     finally:
         session.close()
 
-    if user is None:
-        await message.answer(
-            "Тебе ще немає в базі 🧐\n"
-            "Спочатку заповни анкету через /start, а потім зможемо її редагувати."
-        )
-        return
+    await message.answer(text, parse_mode="HTML")
 
+
+# ====================== /edit ======================
+
+@router_comand.message(Command("edit"))
+async def cmd_edit(message: Message, state: FSMContext):
+    """
+    Обробка команди /edit.
+
+    - якщо користувача ще немає в БД → пояснюємо, що треба спочатку пройти /start
+      (BotMessage.key = "edit_user_not_found").
+    - якщо користувач є → показуємо меню редагування (send_edit_menu).
+    """
+    session = SessionLocal()
+    try:
+        user = get_user_by_telegram_id(session, message.from_user.id)
+
+        if user is None:
+            # Текст при відсутності профілю
+            # key="edit_user_not_found"
+            text = render_bot_message(session, "edit_user_not_found", lang="uk")
+            await message.answer(text, parse_mode="HTML")
+            return
+
+    finally:
+        session.close()
+
+    # Є користувач → показуємо меню редагування
     await state.set_state(EditProfileStates.menu)
     await send_edit_menu(message)
 
 
+# ====================== /view ======================
+
 @router_comand.message(Command("view"))
 async def cmd_view(message: Message, state: FSMContext):
+    """
+    Обробка команди /view (перегляд власного профілю).
+
+    - якщо профілю немає → показуємо повідомлення (BotMessage.key = "view_user_not_found").
+    - якщо є → будуємо картку профілю та показуємо її (BotMessage.key = "view_profile_card"),
+      а також окремим повідомленням підказуємо про /edit та /match
+      (BotMessage.key = "view_suggest_edit_match").
+    """
     session = SessionLocal()
     try:
         user = get_user_by_telegram_id(session, message.from_user.id)
+
+        if user is None:
+            # Повідомлення, якщо профіль ще не створений
+            # key="view_user_not_found"
+            text = render_bot_message(session, "view_user_not_found", lang="uk")
+            await message.answer(text, parse_mode="HTML")
+            return
+
+        # -------- Нормалізація полів профілю --------
+        name = user.name or "не вказано"
+        nickname = user.nickname or "не вказано"
+        region = user.region or "не вказано"
+
+        if user.city:
+            place = f"🏙 {user.city}"
+        elif user.village:
+            place = f"🌿 {user.village}"
+        else:
+            place = "не вказано"
+
+        age = str(user.age) if user.age is not None else "не вказано"
+        status = user.status or "не вказано"
+
+        # Інтереси в кілька рядків
+        if user.interests:
+            interests_lines = "\n".join(
+                f"   • {html.escape(i)}" for i in user.interests
+            )
+            interests_block = f"\n{interests_lines}"
+        else:
+            interests_block = " не вказано"
+
+        bio = user.bio or "не вказано"
+
+        status_emoji = get_status_emoji(user.status)
+
+        # Екрануємо текстові поля, щоб не зламати HTML
+        name_safe = html.escape(name)
+        nickname_safe = html.escape(nickname)
+        region_safe = html.escape(region)
+        place_safe = html.escape(place)
+        status_safe = html.escape(status)
+        bio_safe = html.escape(bio)
+
+        # -------- Картка профілю з BotMessage --------
+        # Приклад шаблону для key="view_profile_card":
+        #
+        # "<b>{status_emoji} Твій профіль</b>\n"
+        # "━━━━━━━━━━━━━━━━━━━━\n"
+        # "👩 <b>Ім'я:</b> {name}\n"
+        # "✨ <b>Нікнейм:</b> {nickname}\n"
+        # "📍 <b>Область:</b> {region}\n"
+        # "📌 <b>Місто / село:</b> {place}\n"
+        # "🎂 <b>Вік:</b> {age}\n"
+        # "👶 <b>Статус:</b> {status}\n"
+        # "🧩 <b>Інтереси:</b>{interests_block}\n"
+        # "📜 <b>BIO:</b>\n{bio}\n"
+        # "━━━━━━━━━━━━━━━━━━━━"
+        text_profile = render_bot_message(
+            session,
+            "view_profile_card",
+            lang="uk",
+            status_emoji=status_emoji,
+            name=name_safe,
+            nickname=nickname_safe,
+            region=region_safe,
+            place=place_safe,
+            age=age,
+            status=status_safe,
+            interests_block=interests_block,
+            bio=bio_safe,
+        )
+
+        # Друге повідомлення з пропозицією /edit та /match
+        # key="view_suggest_edit_match"
+        # Наприклад:
+        # "Хочеш щось змінити чи почати метчінг?\n"
+        # "✏️ /edit — змінити дані анкети\n"
+        # "🤝 /match — почати пошук мам (метчінг)\n"
+        text_followup = render_bot_message(
+            session,
+            "view_suggest_edit_match",
+            lang="uk",
+        )
+
     finally:
         session.close()
 
-    if user is None:
-        await message.answer(
-            "Тебе ще немає в базі 🧐\n"
-            "Спочатку заповни анкету через /start, а потім зможеш її переглядати."
-        )
-        return
+    # Надсилаємо картку профілю
+    await message.answer(text_profile, parse_mode="HTML")
 
-    # Нормалізація даних
-    name = user.name or "не вказано"
-    nickname = user.nickname or "не вказано"
-    region = user.region or "не вказано"
+    # Надсилаємо фоллоу-ап із підказками
+    await message.answer(text_followup, parse_mode="HTML")
 
-    if user.city:
-        place = f"🏙 {user.city}"
-    elif user.village:
-        place = f"🌿 {user.village}"
-    else:
-        place = "не вказано"
 
-    age = str(user.age) if user.age is not None else "не вказано"
-    status = user.status or "не вказано"
-
-    if user.interests:
-        interests_lines = "\n".join(f"   • {i}" for i in user.interests)
-        interests_block = f"\n{interests_lines}"
-    else:
-        interests_block = " не вказано"
-
-    bio = user.bio or "не вказано"
-
-    status_emoji = get_status_emoji(user.status)
-
-    # Картка профілю
-    text = (
-        f"{status_emoji} *Твій профіль*\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"👩 *Ім'я:* {name}\n"
-        f"✨ *Нікнейм:* {nickname}\n"
-        f"📍 *Область:* {region}\n"
-        f"📌 *Місто / село:* {place}\n"
-        f"🎂 *Вік:* {age}\n"
-        f"👶 *Статус:* {status}\n"
-        f"🧩 *Інтереси:*{interests_block}\n"
-        f"📜 *BIO:*\n{bio}\n"
-        f"━━━━━━━━━━━━━━━━━━━━"
-    )
-
-    # Одне красиве повідомлення-картка
-    await message.answer(text, parse_mode="Markdown")
-
-    # Пропозиція оновити / почати метчінг
-    await message.answer(
-        "Хочеш щось змінити чи почати метчінг?\n"
-        "✏️ /edit — змінити дані анкети\n"
-        "🤝 /match — почати пошук мам (метчінг)\n"
-    )
-
+# ====================== /match ======================
 
 @router_comand.message(Command("match"))
 async def cmd_match(message: Message, state: FSMContext):
-    me_id = message.from_user.id
+    """
+    Обробка команди /match (початок метчингу).
 
+    - якщо профілю немає → показуємо повідомлення (BotMessage.key = "match_user_not_found")
+      і не пускаємо далі.
+    - якщо профіль є → питаємо, за яким критерієм шукати (кнопки) +
+      текст (BotMessage.key = "match_choose_criteria").
+    """
+    me_id = message.from_user.id
     session = SessionLocal()
     try:
         me = get_user_by_telegram_id(session, me_id)
+
+        if me is None:
+            # Повідомлення, якщо користувача немає в базі.
+            # Цей же ключ використовується в run_match_flow.
+            # key="match_user_not_found"
+            text = render_bot_message(session, "match_user_not_found", lang="uk")
+            await message.answer(text, parse_mode="HTML")
+            return
+
+        # Є користувач → питаємо критерій пошуку
+        # Приклад шаблону:
+        # key="match_choose_criteria"
+        # text="Окей, давай підберемо тобі мам 🤝\nЗа яким критерієм хочеш шукати?"
+        text_criteria = render_bot_message(
+            session,
+            "match_choose_criteria",
+            lang="uk",
+        )
+
     finally:
         session.close()
 
-    if me is None:
-        await message.answer(
-            "Тебе ще немає в базі 🧐\n"
-            "Спочатку заповни анкету через /start."
-        )
-        return
-
     await message.answer(
-        "Окей, давай підберемо тобі мам 🤝\n"
-        "За яким критерієм хочеш шукати?",
+        text_criteria,
         reply_markup=build_match_criteria_kb(),
+        parse_mode="HTML",
     )
     await state.set_state(MatchStates.criteria)

@@ -1,7 +1,7 @@
 import random
 from sqlalchemy.orm import Session
 
-from config import SessionLocal
+from database import SessionLocal
 from database import User  # або звідки в тебе імпортується User
 from config import INTEREST_OPTIONS, VALID_REGIONS, STATUS_OPTIONS
 
