@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from state import MatchStates, ProfileStates
 from database import SessionLocal
 import html
+import asyncio
 
 
 # ====================== БАЗОВІ ХЕЛПЕРИ ПО КОРИСТУВАЧАМ ======================
@@ -20,25 +21,35 @@ def get_user_by_telegram_id(session: Session, telegram_id: int):
 
 async def send_edit_menu(message: Message):
     """
-    Відправляє меню редагування анкети.
+    Відправляє меню редагування анкети з невеликою затримкою перед підказкою.
 
-    Текст підтягується з таблиці BotMessage за ключем "edit_menu".
-    У шаблоні можна використовувати будь-яке форматування HTML.
+    За edit.csv:
+      ROW 1: основний текст (edit_r1_c0)
+      ROW 2: затримка 3 секунд
+      ROW 3: додатковий текст з командами (edit_r3_c0)
     """
     session = SessionLocal()
     try:
-        # Текст редагування анкети. Приклад шаблону в БД:
-        # key="edit_menu", lang="uk"
-        # text="Що хочеш змінити? Обери параметр нижче 👇\n..."
-        text = render_bot_message(session, "edit_menu", lang="uk")
+        # Основне запитання: "Що саме хочеш оновити..."
+        text_main = render_bot_message(session, "edit_r1_c0", lang="uk")
+
+        # Додаткова підказка з командами /view, /match
+        text_hint = render_bot_message(session, "edit_r3_c0", lang="uk")
     finally:
         session.close()
 
+    # 1️⃣ Надсилаємо основний текст + клавіатуру з пунктами редагування
     await message.answer(
-        text,
+        text_main,
         reply_markup=edit_menu_kb(),
         parse_mode="HTML",
     )
+
+    # 2️⃣ Затримка 3 секунди (ROW 2: "затримка 3 секунд")
+    #   + надсилаємо друге повідомлення, якщо воно реально є в БД
+    if not (text_hint.startswith("[Текст 'edit_r3_c0'") and "не знайдено" in text_hint):
+        await asyncio.sleep(3)
+        await message.answer(text_hint, parse_mode="HTML")
 
 
 def get_status_emoji(status: str) -> str:

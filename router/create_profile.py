@@ -1,6 +1,6 @@
 import math
 import re
-
+import asyncio
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
@@ -30,59 +30,62 @@ router_state = Router()
 
 @router_state.message(ProfileStates.name)
 async def process_name(message: Message, state: FSMContext):
-    """
-    Перший крок анкети — ім'я.
+    name = message.text.strip()
 
-    Валідуємо:
-    - не порожнє
-    - містить хоча б одну літеру
-    - не складається лише з цифр
-    - довжина не менше 2 символів
+    # ❌ Забороняємо порожній текст
+    if not name:
+        await message.answer("Будь ласка, введи ім’я 🙂")
+        return
 
-    Усі тексти беремо з BotMessage:
-      - profile_name_empty
-      - profile_name_no_letter
-      - profile_name_digits_only
-      - profile_name_too_short
-      - profile_ask_nickname
-    """
-    name = (message.text or "").strip()
+    # ❌ Забороняємо якщо в імені НІ ОДНІЄЇ букви
+    if not re.search(r"[A-Za-zА-Яа-яЇїЄєІіҐґ]", name):
+        await message.answer("Ім’я повинно містити хоча б одну букву 🙂")
+        return
+
+    # ❌ Забороняємо якщо це лише цифри
+    if name.isdigit():
+        await message.answer("Ім’я не може складатися лише з цифр 🙂")
+        return
+
+    # ❌ Мінімальна довжина (імітація реального імені)
+    if len(name) < 2:
+        await message.answer("Ім’я має містити хоча б 2 літери 🙂")
+        return
+
+    # ✅ Усе добре — зберігаємо у FSM
+    await state.update_data(name=name)
+
+    # Дістаємо тексти з BotMessage згідно start.csv
     session = SessionLocal()
-
     try:
-        # ❌ Порожній текст
-        if not name:
-            text = render_bot_message(session, "profile_name_empty", lang="uk")
-            await message.answer(text, parse_mode="HTML")
-            return
+        # ROW 6: "Дуже приємно познайомитись 🌸 ..."
+        text_after_name = render_bot_message(session, "start_r6_c0", lang="uk")
 
-        # ❌ Немає жодної літери
-        if not re.search(r"[A-Za-zА-Яа-яЇїЄєІіҐґ]", name):
-            text = render_bot_message(session, "profile_name_no_letter", lang="uk")
-            await message.answer(text, parse_mode="HTML")
-            return
+        # ROW 8: "Але перед цим я швиденько розповім тобі як я працюю..."
+        text_how_it_works = render_bot_message(session, "start_r8_c0", lang="uk")
 
-        # ❌ Лише цифри
-        if name.isdigit():
-            text = render_bot_message(session, "profile_name_digits_only", lang="uk")
-            await message.answer(text, parse_mode="HTML")
-            return
-
-        # ❌ Занадто коротке
-        if len(name) < 2:
-            text = render_bot_message(session, "profile_name_too_short", lang="uk")
-            await message.answer(text, parse_mode="HTML")
-            return
-
-        # ✅ Усе добре — зберігаємо ім'я в стан
-        await state.update_data(name=name)
-
-        text = render_bot_message(session, "profile_ask_nickname", lang="uk")
-        await message.answer(text, parse_mode="HTML")
-        await state.set_state(ProfileStates.nickname)
-
+        # ROW 10: "А тепер давай хутко заповнювати профіль... Напиши нікнейм..."
+        text_ask_nickname = render_bot_message(session, "start_r10_c0", lang="uk")
     finally:
         session.close()
+
+    # 1️⃣ Відповідь після імені
+    await message.answer(text_after_name, parse_mode="HTML")
+
+    # 2️⃣ Затримка 5 секунд
+    await asyncio.sleep(5)
+
+    # 3️⃣ Блок "як я працюю"
+    await message.answer(text_how_it_works, parse_mode="HTML")
+
+    # 4️⃣ Затримка 10 секунд
+    await asyncio.sleep(10)
+
+    # 5️⃣ Питання про нікнейм
+    await message.answer(text_ask_nickname, parse_mode="HTML")
+
+    # Переходимо до введення нікнейму
+    await state.set_state(ProfileStates.nickname)
 
 
 # ====================== 2. НІКНЕЙМ ======================

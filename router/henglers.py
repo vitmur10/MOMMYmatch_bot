@@ -26,7 +26,7 @@ async def match_by_location(message: Message, state: FSMContext):
     await run_match_flow(message, state, criterion="location")
 
 
-@router_hengler.message(MatchStates.criteria, F.text == "📍+🧩 Місце + інтереси")
+@router_hengler.message(MatchStates.criteria, F.text == "📍Місце проживання + Інтереси 🧩")
 async def match_by_location_interests(message: Message, state: FSMContext):
     """
     Старт метчингу за місцем проживання та спільними інтересами.
@@ -34,7 +34,7 @@ async def match_by_location_interests(message: Message, state: FSMContext):
     await run_match_flow(message, state, criterion="location_interests")
 
 
-@router_hengler.message(MatchStates.criteria, F.text == "🧩 Інтереси")
+@router_hengler.message(MatchStates.criteria, F.text == "Інтереси 🧩")
 async def match_by_interests(message: Message, state: FSMContext):
     """
     Старт метчингу тільки за спільними інтересами.

@@ -2,7 +2,7 @@ from aiogram import Router
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-
+import asyncio
 from database import SessionLocal
 from state import ProfileStates, EditProfileStates, MatchStates
 from function import (
@@ -22,40 +22,45 @@ router_comand = Router()
 @router_comand.message(CommandStart())
 async def process_start_command(message: Message, state: FSMContext):
     """
-    Обробка команди /start.
+    /start
 
-    Логіка:
-    - якщо користувача ще немає в БД → переводимо в стан заповнення анкети (ім'я)
-      і показуємо вітальний текст для новачка (BotMessage.key = "start_new_user").
-    - якщо користувач вже є → показуємо вітальний текст з командами
-      (BotMessage.key = "start_existing_user").
+    NEW user (нема в БД):
+      1) Повідомлення з привітанням (start_r2_c0)
+      2) Затримка 10 секунд
+      3) Повідомлення з представленням бота + питанням "А як тебе звати?" (start_r4_c0)
+      4) Стан ProfileStates.name
+
+    REGISTERED user (є в БД):
+      1) Повідомлення з колонки REGISTERED (start_r2_c1)
     """
     session = SessionLocal()
     try:
         user = get_user_by_telegram_id(session, message.from_user.id)
 
+        # 🔹 Новий користувач
         if user is None:
-            # ❌ Немає в БД → запускаємо анкету
+            # 1) Перше вітальне повідомлення
+            text_intro = render_bot_message(session, "start_r2_c0", lang="uk")
+            await message.answer(text_intro, parse_mode="HTML")
+
+            # 2) Затримка 10 секунд (згідно CSV: "затримка 10 секунд")
+            await asyncio.sleep(10)
+
+            # 3) Друге повідомлення: представлення бота + "А як тебе звати?"
+            text_ask_name = render_bot_message(session, "start_r4_c0", lang="uk")
+
+            # 4) Ставимо стан "name" і задаємо питання
             await state.set_state(ProfileStates.name)
+            await message.answer(text_ask_name, parse_mode="HTML")
 
-            # Приклад шаблону в BotMessage:
-            # key="start_new_user", lang="uk"
-            # text="Привіт! 👋\nДавай заповнимо анкету, щоб я могла підбирати тобі мам 🫶\n\n"
-            #      "Спочатку — як тебе звати? Напиши, будь ласка, своє ім’я."
-            text = render_bot_message(session, "start_new_user", lang="uk")
-
-            await message.answer(text, parse_mode="HTML")
+        # 🔹 Користувач уже є в базі
         else:
-            # ✅ Є в БД → просто вітаємо і показуємо доступні команди
-            # Приклад шаблону:
-            # key="start_existing_user"
-            # text="Ти вже зареєстрована в системі 🌸\n\n..."
-            text = render_bot_message(session, "start_existing_user", lang="uk")
+            # Текст з колонки REGISTERED user → row2, col1
+            text_existing = render_bot_message(session, "start_r2_c1", lang="uk")
+            await message.answer(text_existing, parse_mode="HTML")
 
-            await message.answer(text, parse_mode="HTML")
     finally:
         session.close()
-
 
 # ====================== /help ======================
 

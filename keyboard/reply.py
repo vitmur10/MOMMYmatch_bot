@@ -100,8 +100,8 @@ def build_match_criteria_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📍 Місце проживання")],
-            [KeyboardButton(text="📍+🧩 Місце + інтереси")],
-            [KeyboardButton(text="🧩 Інтереси")],
+            [KeyboardButton(text="📍Місце проживання + Інтереси 🧩")],
+            [KeyboardButton(text="Інтереси 🧩")],
         ],
         resize_keyboard=True,
         one_time_keyboard=True,
